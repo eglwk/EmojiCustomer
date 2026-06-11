@@ -159,8 +159,20 @@ def create_new_chat_session():
 
 
 def get_upload_link():
+    """
+    Holt einen Upload-Link direkt für den Zielordner.
+    Wichtig: Ohne params={"p": SEAFILE_DIR} kann Seafile den Fehler
+    "Parent dir doesn't match" zurückgeben.
+    """
     url = f"{SEAFILE_BASE_URL}/api2/repos/{SEAFILE_REPO_ID}/upload-link/"
-    response = requests.get(url, headers=seafile_headers(), timeout=30)
+    params = {"p": SEAFILE_DIR}
+
+    response = requests.get(
+        url,
+        headers=seafile_headers(),
+        params=params,
+        timeout=30
+    )
 
     if response.status_code != 200:
         raise Exception(f"Upload-Link fehlgeschlagen: {response.status_code} {response.text}")
@@ -587,7 +599,8 @@ def test_seafile_exact():
         "repo_id_repr": repr(SEAFILE_REPO_ID),
         "seafile_dir": SEAFILE_DIR,
         "token_length": len(SEAFILE_TOKEN) if SEAFILE_TOKEN else 0,
-        "upload_url": upload_url,
+        "upload_url_without_dir": upload_url,
+        "upload_url_uses_dir": True,
         "update_url": update_url,
         "file_url": file_url,
         "vp_id": get_current_vp(),
@@ -639,6 +652,25 @@ def test_target_folder():
     except Exception as e:
         return jsonify({
             "folder_accessible": False,
+            "seafile_dir": SEAFILE_DIR,
+            "error": str(e)
+        }), 500
+
+
+@app.route("/test_upload_link")
+def test_upload_link():
+    try:
+        upload_link = get_upload_link()
+
+        return jsonify({
+            "upload_link_works": True,
+            "seafile_dir": SEAFILE_DIR,
+            "chat_path": get_chat_path(),
+            "upload_link_preview": upload_link[:120]
+        })
+    except Exception as e:
+        return jsonify({
+            "upload_link_works": False,
             "seafile_dir": SEAFILE_DIR,
             "error": str(e)
         }), 500
