@@ -4,6 +4,7 @@ import requests
 import os
 import json
 import re
+import time
 
 load_dotenv()
 
@@ -14,6 +15,8 @@ app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
 app.config["SESSION_COOKIE_PARTITIONED"] = True
 app.config["SESSION_COOKIE_NAME"] = "chatbot_session_v3"
+
+MAX_CHAT_SECONDS = 9 * 60 + 30  # 9:30 Minuten = 570 Sekunden
 
 
 # -----------------------------
@@ -155,6 +158,8 @@ def create_new_chat_session():
     session.clear()
     vp_id = get_next_vp_id()
     session["vp_id"] = vp_id
+    session["chat_started_at"] = time.time()
+    session["chat_ended"] = False
     return vp_id
 
 
@@ -447,7 +452,7 @@ def anonymize_text(text):
 # -----------------------------
 # LLM
 # -----------------------------
-def ask_mistral(chat_history):
+def ask_mistral(chat_history, final_reply=False):
     messages = [
         {
             "role": "system",
@@ -505,6 +510,19 @@ def ask_mistral(chat_history):
                 "content": msg["content"]
             })
 
+    if final_reply:
+        messages.append({
+            "role": "system",
+            "content": (
+                "Dies ist die letzte Antwort im Gespräch. "
+                "Reagiere noch einmal empathisch, warm und konkret auf die letzte Nachricht der teilnehmenden Person. "
+                "Stelle keine neue Frage. "
+                "Leite kein weiteres Gespräch ein. "
+                "Beende das Gespräch freundlich, wertschätzend und eindeutig. "
+                "Schreibe kurz bis mittellang, etwa 3 bis 5 Sätze."
+            )
+        })
+
     headers = {
         "Authorization": f"Bearer {LLM_API_KEY}",
         "Content-Type": "application/json"
@@ -527,6 +545,24 @@ def ask_mistral(chat_history):
 
     result = response.json()
     return result["choices"][0]["message"]["content"]
+
+
+def ensure_chat_timer():
+    if "chat_started_at" not in session:
+        session["chat_started_at"] = time.time()
+
+    if "chat_ended" not in session:
+        session["chat_ended"] = False
+
+
+def get_elapsed_chat_seconds():
+    ensure_chat_timer()
+    return time.time() - session["chat_started_at"]
+
+
+def get_remaining_chat_seconds():
+    remaining = MAX_CHAT_SECONDS - get_elapsed_chat_seconds()
+    return max(0, int(remaining))
 
 
 # -----------------------------
@@ -555,10 +591,29 @@ def load_chat():
     })
 
 
+@app.route("/chat_status", methods=["GET"])
+def chat_status():
+    ensure_chat_timer()
+
+    return jsonify({
+        "ended": bool(session.get("chat_ended", False)),
+        "time_left": get_remaining_chat_seconds()
+    })
+
+
 @app.route("/send", methods=["POST"])
 def send():
     if "vp_id" not in session:
         session["vp_id"] = get_next_vp_id()
+
+    ensure_chat_timer()
+
+    if session.get("chat_ended", False):
+        return jsonify({
+            "error": "Das Gespräch ist bereits beendet.",
+            "ended": True,
+            "vp_id": get_current_vp()
+        }), 403
 
     data = request.get_json()
     user_message = data.get("message", "").strip()
@@ -569,13 +624,16 @@ def send():
     try:
         chat_history = load_chat_history_from_seafile()
 
+        elapsed_seconds = get_elapsed_chat_seconds()
+        is_final_reply = elapsed_seconds >= MAX_CHAT_SECONDS
+
         model_history = chat_history.copy()
         model_history.append({
             "role": "user",
             "content": user_message
         })
 
-        reply = ask_mistral(model_history)
+        reply = ask_mistral(model_history, final_reply=is_final_reply)
 
         # Nur anonymisierte Inhalte speichern
         chat_history.append({
@@ -588,11 +646,20 @@ def send():
             "content": anonymize_text(reply)
         })
 
+        if is_final_reply:
+            chat_history.append({
+                "role": "system",
+                "content": "CHAT_ENDED_AFTER_9_30_MINUTES"
+            })
+            session["chat_ended"] = True
+
         save_chat_history_to_seafile(chat_history)
 
         return jsonify({
             "reply": reply,
-            "vp_id": get_current_vp()
+            "vp_id": get_current_vp(),
+            "ended": is_final_reply,
+            "time_left": get_remaining_chat_seconds()
         })
 
     except Exception as e:
