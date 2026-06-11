@@ -30,6 +30,10 @@ SEAFILE_BASE_URL = os.environ.get("SEAFILE_BASE_URL", "").strip()
 SEAFILE_TOKEN = os.environ.get("SEAFILE_TOKEN", "").strip()
 SEAFILE_REPO_ID = os.environ.get("SEAFILE_REPO_ID", "").strip()
 
+# Zielordner innerhalb des Seafile-Repositories "Expra"
+# Entspricht: Seafile\Expra\Gruppe 2\high_empathy
+SEAFILE_DIR = "/Gruppe 2/high_empathy"
+
 
 # -----------------------------
 # Hilfslisten für Anonymisierung
@@ -88,12 +92,16 @@ def get_chat_filename():
 
 
 def get_chat_path():
-    return f"/{get_chat_filename()}"
+    return f"{SEAFILE_DIR.rstrip('/')}/{get_chat_filename()}"
 
 
-def list_seafile_root_files():
+def list_seafile_target_files():
+    """
+    Listet alle Dateien im Zielordner:
+    /Gruppe 2/high_empathy
+    """
     url = f"{SEAFILE_BASE_URL}/api2/repos/{SEAFILE_REPO_ID}/dir/"
-    params = {"p": "/"}
+    params = {"p": SEAFILE_DIR}
 
     response = requests.get(
         url,
@@ -103,7 +111,10 @@ def list_seafile_root_files():
     )
 
     if response.status_code != 200:
-        raise Exception(f"Seafile-Dateiliste fehlgeschlagen: {response.status_code} {response.text}")
+        raise Exception(
+            f"Seafile-Dateiliste für Zielordner fehlgeschlagen: "
+            f"{response.status_code} {response.text}"
+        )
 
     data = response.json()
 
@@ -117,12 +128,12 @@ def list_seafile_root_files():
 
 def get_next_vp_id():
     """
-    Sucht in Seafile nach vorhandenen Dateien wie:
+    Sucht im Seafile-Zielordner nach vorhandenen Dateien wie:
     vp1.json, vp2.json, vp3.json ...
 
     Danach wird die nächste freie Nummer vergeben.
     """
-    filenames = list_seafile_root_files()
+    filenames = list_seafile_target_files()
 
     max_number = 0
 
@@ -217,7 +228,7 @@ def upload_new_file_to_seafile(file_bytes):
     }
 
     data = {
-        "parent_dir": "/",
+        "parent_dir": SEAFILE_DIR,
         "replace": "1"
     }
 
@@ -574,6 +585,7 @@ def test_seafile_exact():
     return jsonify({
         "base_url_repr": repr(SEAFILE_BASE_URL),
         "repo_id_repr": repr(SEAFILE_REPO_ID),
+        "seafile_dir": SEAFILE_DIR,
         "token_length": len(SEAFILE_TOKEN) if SEAFILE_TOKEN else 0,
         "upload_url": upload_url,
         "update_url": update_url,
@@ -606,9 +618,30 @@ def test_seafile():
         "response_text": response.text,
         "base_url": SEAFILE_BASE_URL,
         "repo_id": SEAFILE_REPO_ID,
+        "seafile_dir": SEAFILE_DIR,
         "vp_id": session.get("vp_id"),
-        "current_chat_file": get_chat_filename()
+        "current_chat_file": get_chat_filename(),
+        "current_chat_path": get_chat_path()
     })
+
+
+@app.route("/test_target_folder")
+def test_target_folder():
+    try:
+        filenames = list_seafile_target_files()
+
+        return jsonify({
+            "folder_accessible": True,
+            "seafile_dir": SEAFILE_DIR,
+            "files_found": filenames,
+            "next_vp_id": get_next_vp_id()
+        })
+    except Exception as e:
+        return jsonify({
+            "folder_accessible": False,
+            "seafile_dir": SEAFILE_DIR,
+            "error": str(e)
+        }), 500
 
 
 @app.route("/test_anonymization")
@@ -663,7 +696,8 @@ def test_session():
     return jsonify({
         "vp_id": session.get("vp_id"),
         "chat_filename": get_chat_filename(),
-        "chat_path": get_chat_path()
+        "chat_path": get_chat_path(),
+        "seafile_dir": SEAFILE_DIR
     })
 
 
