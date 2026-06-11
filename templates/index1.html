@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chatti</title>
+  <title>Toni</title>
 
   <style>
     body {
@@ -56,6 +56,13 @@
       font-size: 18px;
       font-weight: bold;
     }
+
+    .header-subtitle {
+      font-size: 12px;
+      opacity: 0.95;
+      margin-top: 2px;
+    }
+
 
     .chat-messages {
       flex: 1;
@@ -171,6 +178,7 @@
 
       let isSending = false;
       let typingIndicator = null;
+      let chatHistory = [];
 
       function scrollToBottom() {
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -200,7 +208,7 @@
         el.classList.add("bot-message-container");
 
         el.innerHTML = `
-          <div class="bot-name">Chatti:</div>
+          <div class="bot-name">Toni:</div>
           <div class="bot-message">${escapeHtml(text)}</div>
         `;
 
@@ -215,7 +223,7 @@
         typingIndicator.classList.add("bot-message-container");
 
         typingIndicator.innerHTML = `
-          <div class="bot-name">Chatti:</div>
+          <div class="bot-name">Toni:</div>
           <div class="bot-message typing-message">schreibt ...</div>
         `;
 
@@ -231,33 +239,9 @@
       }
 
       async function loadChat() {
-        try {
-          const response = await fetch("/load_chat");
-          const data = await response.json();
-
-          messagesContainer.innerHTML = "";
-
-          if (!response.ok) {
-            addBotMessage(data.error || "Chat konnte nicht geladen werden.");
-            return;
-          }
-
-          if (data.chat_history && data.chat_history.length > 0) {
-            data.chat_history.forEach(msg => {
-              if (msg.role === "user") {
-                addUserMessage(msg.content);
-              } else if (msg.role === "assistant") {
-                addBotMessage(msg.content);
-              }
-            });
-          } else {
-            addBotMessage("Hallo! Schön, dass du da bist. Womit kann ich dir helfen?");
-          }
-
-        } catch (error) {
-          console.error(error);
-          addBotMessage("Chat konnte nicht geladen werden.");
-        }
+        messagesContainer.innerHTML = "";
+        chatHistory = [];
+        addBotMessage("Hey, es ist wunderschön, dass du dir die Zeit genommen hast heute mit mir zu schreiben. Wenn der Alltag sich gerade vielleicht etwas schwer oder überwältigend anfühlt, bist du damit nicht allein. Magst du erzählen, wie sich Stress bei dir im Moment bemerkbar macht?");
       }
 
       async function sendMessage() {
@@ -282,7 +266,8 @@
               "Content-Type": "application/json"
             },
             body: JSON.stringify({
-              message: userMessage
+              message: userMessage,
+              chat_history: chatHistory
             })
           });
 
@@ -293,6 +278,8 @@
             addBotMessage(data.error || "Serverfehler.");
           } else {
             addBotMessage(data.reply);
+            chatHistory.push({ role: "user", content: userMessage });
+            chatHistory.push({ role: "assistant", content: data.reply });
           }
 
         } catch (error) {
@@ -329,10 +316,10 @@
 <body>
   <div class="chat-container">
     <div class="chat-header">
-      <img src="/static/chattiHFI.png" alt="Chatti">
+      <img src="/static/chattiHFI.png" alt="Toni">
 
       <div class="header-text">
-        <div class="header-title">Chatti</div>
+        <div class="header-title">Toni</div>
       </div>
     </div>
 
