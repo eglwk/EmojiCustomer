@@ -29,7 +29,6 @@ LLM_API_URL = os.environ.get(
 SEAFILE_BASE_URL = os.environ.get("SEAFILE_BASE_URL", "").strip()
 SEAFILE_TOKEN = os.environ.get("SEAFILE_TOKEN", "").strip()
 SEAFILE_REPO_ID = os.environ.get("SEAFILE_REPO_ID", "").strip()
-STUDY_DAY = os.environ.get("STUDY_DAY", "1").strip()
 
 
 # -----------------------------
@@ -85,7 +84,7 @@ def get_current_vp():
 
 def get_chat_filename():
     vp_id = make_safe_filename(get_current_vp())
-    return f"{vp_id}_day{STUDY_DAY}.json"
+    return f"{vp_id}.json"
 
 
 def get_chat_path():
@@ -119,7 +118,7 @@ def list_seafile_root_files():
 def get_next_vp_id():
     """
     Sucht in Seafile nach vorhandenen Dateien wie:
-    vp1_day1.json, vp2_day1.json, vp3_day1.json ...
+    vp1.json, vp2.json, vp3.json ...
 
     Danach wird die nächste freie Nummer vergeben.
     """
@@ -128,7 +127,7 @@ def get_next_vp_id():
     max_number = 0
 
     for filename in filenames:
-        match = re.match(r"^vp(\d+)_day\d+\.json$", filename)
+        match = re.match(r"^vp(\d+)\.json$", filename)
         if match:
             number = int(match.group(1))
             if number > max_number:
@@ -139,7 +138,7 @@ def get_next_vp_id():
 
 def create_new_chat_session():
     """
-    Wird bei jedem Reload von / ausgeführt.
+    Wird bei jedem Laden von / ausgeführt.
     Dadurch bekommt jeder Seitenaufruf eine neue VP-ID.
     """
     session.clear()
@@ -290,6 +289,7 @@ def anonymize_text(text):
     if not text:
         return text
 
+    # Strukturierte Daten
     text = re.sub(r'[\w\.-]+@[\w\.-]+\.\w+', '[EMAIL]', text)
     text = re.sub(r'(\+?\d[\d\s\/\-\(\)]{6,}\d)', '[PHONE]', text)
     text = re.sub(r'https?://\S+|www\.\S+', '[URL]', text)
@@ -299,6 +299,7 @@ def anonymize_text(text):
     text = re.sub(r'\b\d{1,2}/\d{1,2}/\d{2,4}\b', '[DATUM]', text)
     text = re.sub(r'@[A-Za-z0-9_\.]+', '[USERNAME]', text)
 
+    # Adressen
     text = re.sub(
         r'\b[A-ZÄÖÜ][a-zäöüß\-]+(?:straße|str\.|weg|allee|platz|gasse|ring|ufer)\s+\d+[a-zA-Z]?\b',
         '[ADRESSE]',
@@ -320,6 +321,7 @@ def anonymize_text(text):
         flags=re.IGNORECASE
     )
 
+    # Alter / Geburtsangaben
     text = re.sub(
         r'\b(geboren am|mein geburtsdatum ist)\s+[^,.\n]+',
         r'\1 [DATUM]',
@@ -334,6 +336,7 @@ def anonymize_text(text):
         flags=re.IGNORECASE
     )
 
+    # Explizite Namensangaben
     text = re.sub(
         r'\b(Ich heiße|Mein Name ist|Ich bin)\s+([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+){0,2})',
         r'\1 [NAME]',
@@ -353,6 +356,7 @@ def anonymize_text(text):
         flags=re.IGNORECASE
     )
 
+    # Institutionen
     text = re.sub(
         r'\b(Ich arbeite bei|Ich arbeite an|Ich studiere an|Ich studiere bei|Ich bin an der|Ich bin bei)\s+([^,.\n]+)',
         r'\1 [INSTITUTION]',
@@ -360,12 +364,14 @@ def anonymize_text(text):
         flags=re.IGNORECASE
     )
 
+    # Feste Orte / Institutionen aus Listen
     for city in sorted(COMMON_GERMAN_CITIES, key=len, reverse=True):
         text = re.sub(rf'\b{re.escape(city)}\b', '[ORT]', text, flags=re.IGNORECASE)
 
     for inst in sorted(INSTITUTIONS, key=len, reverse=True):
         text = re.sub(rf'\b{re.escape(inst)}\b', '[INSTITUTION]', text, flags=re.IGNORECASE)
 
+    # Namen nach typischen Kontexten
     context_patterns = [
         r'(\bmit)\s+([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?)',
         r'(\bbei)\s+([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?)',
@@ -384,6 +390,7 @@ def anonymize_text(text):
 
         text = re.sub(pattern, repl, text)
 
+    # Verben + Name
     verb_patterns = [
         r'(\b(?:habe|hatte|treffe|traf|gesehen|sah|kenne|kannte|schrieb|schreibe|rief|rufe|kontaktierte|sprach mit|telefonierte mit|besuchte)\b)\s+([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?)'
     ]
@@ -396,6 +403,7 @@ def anonymize_text(text):
 
         text = re.sub(pattern, repl2, text, flags=re.IGNORECASE)
 
+    # Weitere lockere Formulierungen
     text = re.sub(
         r'\b(war mit)\s+([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?)',
         lambda m: f"{m.group(1)} {mask_capitalized_name_phrase(m.group(2))}",
@@ -531,6 +539,7 @@ def send():
 
         reply = ask_mistral(model_history)
 
+        # Nur anonymisierte Inhalte speichern
         chat_history.append({
             "role": "user",
             "content": anonymize_text(user_message)
@@ -553,6 +562,9 @@ def send():
         return jsonify({"error": str(e)}), 500
 
 
+# -----------------------------
+# Test-Routen
+# -----------------------------
 @app.route("/test_seafile_exact")
 def test_seafile_exact():
     upload_url = f"{SEAFILE_BASE_URL}/api2/repos/{SEAFILE_REPO_ID}/upload-link/"
