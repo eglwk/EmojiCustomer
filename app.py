@@ -35,7 +35,7 @@ SEAFILE_REPO_ID = os.environ.get("SEAFILE_REPO_ID", "").strip()
 
 # Zielordner innerhalb des Seafile-Repositories "Expra"
 # Entspricht: Seafile\Expra\Gruppe 2\low_empathy
-SEAFILE_DIR = "/Gruppe 2/low_empathy"
+SEAFILE_DIR = "/Gruppe 3/EmojiCustomer"
 
 
 # -----------------------------
